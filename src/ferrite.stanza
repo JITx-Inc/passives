@@ -1,0 +1,133 @@
+#use-added-syntax(jitx)
+defpackage passives/ferrite:
+  import core
+  import jitx
+  import jitx/commands
+
+  import jsl/ensure
+  import jsl/errors
+  import jsl/symbols
+  import jsl/landpatterns
+
+doc: \<DOC>
+Ferrite Device Specifications Data Strucgture
+
+These parameters come from the datasheet and
+provide tools for doing check computation on
+ferrite devices.
+<DOC>
+public defstruct Ferrite-Specs :
+  part-number:String
+  imped:Toleranced
+  freq:Double
+  rated-current:Double
+  derate-temp:Double
+  derate-current:Double
+  DC-R:Toleranced
+with:
+  printer => true
+  keyword-constructor => true
+
+doc: \<DOC>
+BLM18KG series specifications
+
+This series has a limited number of
+parts but provides a selection from which
+we can make some intelligent decisions.
+<DOC>
+public val BLM18KG-specs = [
+  220 => Ferrite-Specs(
+    part-number = "BLM18KG221SN1D"
+    imped = 220.0 +/- (25 %),
+    freq = 100.0e9
+    rated-current = 2.2
+    derate-temp = 125.0
+    derate-current = 1.5,
+    DC-R = min-typ-max(0.0, 0.05, 0.06)
+  )
+  330 => Ferrite-Specs(
+    part-number = "BLM18KG331SN1D"
+    imped = 330.0 +/- (25 %),
+    freq = 100.0e9
+    rated-current = 1.7
+    derate-temp = 125.0
+    derate-current = 1.2,
+    DC-R = min-typ-max(0.0, 0.08, 0.095)
+  )
+  470 => Ferrite-Specs(
+    part-number = "BLM18KG471SN1D"
+    imped = 470.0 +/- (25 %),
+    freq = 100.0e9
+    rated-current = 1.5
+    derate-temp = 125.0
+    derate-current = 1.0,
+    DC-R = min-typ-max(0.0, 0.130, 0.145)
+  )
+  600 => Ferrite-Specs(
+    part-number = "BLM18KG601SN1D"
+    imped = 600.0 +/- (25 %),
+    freq = 100.0e9
+    rated-current = 1.3
+    derate-temp = 125.0
+    derate-current = 1.0,
+    DC-R = min-typ-max(0.0, 0.15, 0.165)
+  )
+  1000  => Ferrite-Specs(
+    part-number = "BLM18KG102SN1D"
+    imped = 1000.0 +/- (25 %),
+    freq = 100.0e9
+    rated-current = 1.0
+    derate-temp = 125.0
+    derate-current = 0.8,
+    DC-R = min-typ-max(0.0, 0.200, 0.230)
+  )
+]
+
+defn get-specs (imped:Int) -> Ferrite-Specs:
+  val m = for kvp in BLM18KG-specs first :
+    if key(kvp) == imped:
+      One(value(kvp))
+    else:
+      None()
+
+  match(m):
+    (_:None): throw $ ValueError("No Ferrite Matches Desired Impedance: %_" % [imped])
+    (given:One<Ferrite-Specs>): value(given)
+
+defn make-specs (specs:Ferrite-Specs):
+  inside pcb-module:
+    property(self.impedance) = imped(specs)
+    property(self.frequency) = freq(specs)
+    property(self.rated-current) = rated-current(specs)
+    property(self.derate-temp) = derate-temp(specs)
+    property(self.derate-current) = derate-current(specs)
+    property(self.DC-resistance) = DC-R(specs)
+
+doc: \<DOC>
+Parameterized Ferrite Components
+
+This components come from the Murata BLM18KG series
+of parts.
+<DOC>
+public pcb-component BLM18KG (imped:Int) :
+  ensure-positive!("imped", imped)
+  manufacturer = "Murata Electronics"
+  val specs = get-specs(imped)
+  mpn = part-number(specs)
+  description = to-string $ "Ferrite, 0603, %_Ω @ %_ Hz, %_ Ω DC" % [imped, freq(specs), typ(DC-R(specs))]
+  datasheet = "https://www.murata.com/products/productdata/8796738650142/ENFA0003.pdf"
+  reference-prefix = "L"
+
+  make-specs(specs)
+
+  pin-properties :
+    [ pin : Ref | pads:Int ...   | side:Dir ]
+    [ p[1]      | 1              | Left ]
+    [ p[2]      | 2              | Right ]
+
+  val symb = FerriteSymbol()
+  assign-symbol $ create-symbol(symb)
+
+  val pkg = get-capacitor-pkg("0603", keep-out = IntraPadKeepOut())
+  val lp = create-landpattern(pkg)
+  assign-landpattern(lp)
